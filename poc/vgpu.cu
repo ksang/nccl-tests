@@ -29,8 +29,8 @@ static void usage(const char *argv0)
 	printf("Usage: %s       vgpu nccl proof of concept.\n", argv0);
 	printf("\n");
 	printf("Options:\n");
-	printf("  -n, --pgpu-num=<num>       number of physical GPU (default 1)\n");
-	printf("  -m, --vgpu-num=<num>       number of virtual GPU (default 2)\n");
+	printf("  -n        number of physical GPU (default 1)\n");
+	printf("  -m        number of virtual GPU (default 2)\n");
 	printf("  %s -n 2 -m 4\n", argv0);
 }
 
@@ -41,16 +41,13 @@ int vgpu_to_pgpu(const int vgpu_id, const int num_pgpu)
 
 int vgpu_test(const int num_pgpu, const int num_vgpu)
 {
-    ncclComm_t comms = (ncclComm_t *)malloc(sizeof(ncclComm_t*num_vgpu));
+    ncclComm_t *comms = (ncclComm_t *)malloc(sizeof(ncclComm_t)*num_vgpu);
 
     int nDev = num_vgpu;
     int size = 32*1024*1024;
-    std::vector<int> vdevs {0 ,1, 2, 3};
-    if (num_vgpu != 4) {
-        devs.resize(num_vgpu);
-        for (int i=0; i<num_vgpu; ++i) {
-            vdevs[i] = i;
-        }
+    int *devs = (int *)malloc(sizeof(int)*num_vgpu);
+    for (int i=0; i<num_vgpu; ++i) {
+        devs[i] = i;
     }
 
     //allocating and initializing device buffers
@@ -112,13 +109,7 @@ int main(int argc, char* argv[])
     int num_vgpu = 2 ;
     while (1) {
 		int c;
-		static struct option long_options[] = {
-			{ .name = "pgpu-num",    .has_arg = 1, .val = 'n' },
-			{ .name = "vgpu-num",    .has_arg = 1, .val = 'm' },
-			{ }
-		};
-
-		c = getopt_long(argc, argv, "n:m:", long_options, NULL);
+		c = getopt(argc, argv, "n:m:");
 		if (c == -1)
 			break;
 
