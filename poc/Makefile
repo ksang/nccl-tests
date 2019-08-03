@@ -61,7 +61,7 @@ DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 BIN_FILES_LIST := vgpu
-BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_perf)
+BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_poc)
 
 build: ${BIN_FILES}
 
