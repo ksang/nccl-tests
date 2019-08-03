@@ -6,9 +6,10 @@
 
 .PHONY : all clean
 
-default : src.build
+default : all
 
-TARGETS=src
+TARGETS=perf
+TARGETS+=poc
 
 all:   ${TARGETS:%=%.build}
 clean: ${TARGETS:%=%.clean}
