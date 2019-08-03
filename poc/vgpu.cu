@@ -41,6 +41,9 @@ int vgpu_to_pgpu(const int vgpu_id, const int num_pgpu)
 
 int vgpu_test(const int num_pgpu, const int num_vgpu)
 {
+    ncclUniqueId ncclId;
+    NCCLCHECK(ncclGetUniqueId(&ncclId));
+
     ncclComm_t *comms = (ncclComm_t *)malloc(sizeof(ncclComm_t)*num_vgpu);
 
     int nDev = num_vgpu;
@@ -49,57 +52,109 @@ int vgpu_test(const int num_pgpu, const int num_vgpu)
     for (int i=0; i<num_vgpu; ++i) {
         devs[i] = i;
     }
+    int *vdevs = (int *)malloc(sizeof(int)*num_vgpu);
+    for (int i=0; i<num_vgpu; ++i) {
+        vdevs[i] = vgpu_to_pgpu(i, num_pgpu);
+    }
 
     //allocating and initializing device buffers
-    float** sendbuff = (float**)malloc(nDev * sizeof(float*));
-    float** recvbuff = (float**)malloc(nDev * sizeof(float*));
+    int** sendbuff = (int**)malloc(nDev * sizeof(int*));
+    int** recvbuff = (int**)malloc(nDev * sizeof(int*));
+    int  *hostbuff = (int *)malloc(size * sizeof(int));
     cudaStream_t* s = (cudaStream_t*)malloc(sizeof(cudaStream_t)*nDev);
 
 
     for (int i = 0; i < nDev; ++i) {
+        printf("Malloc and preparing buffer on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
         CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
-        CUDACHECK(cudaMalloc(sendbuff + i, size * sizeof(float)));
-        CUDACHECK(cudaMalloc(recvbuff + i, size * sizeof(float)));
-        CUDACHECK(cudaMemset(sendbuff[i], 1, size * sizeof(float)));
-        CUDACHECK(cudaMemset(recvbuff[i], 0, size * sizeof(float)));
+        CUDACHECK(cudaMalloc(sendbuff + i, size * sizeof(int)));
+        CUDACHECK(cudaMalloc(recvbuff + i, size * sizeof(int)));
+        CUDACHECK(cudaMemset(sendbuff[i], 1, size * sizeof(int)));
+        CUDACHECK(cudaMemset(recvbuff[i], 0, size * sizeof(int)));
+        printf("    sendbuf: %p\n    recvbuf: %p\n", sendbuff[i], recvbuff[i]);
         CUDACHECK(cudaStreamCreate(s+i));
     }
 
+    // Check memory contents
+    for (int i = 0; i < nDev; ++i) {
+        printf("Buffer content on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
+        CUDACHECK(cudaMemcpy(hostbuff, sendbuff[i], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("    send: 0x%x\n", hostbuff[0]);
+        CUDACHECK(cudaMemcpy(hostbuff, recvbuff[i], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("    recv: 0x%x\n", hostbuff[1]);
+    }
 
     //initializing NCCL
-    NCCLCHECK(ncclCommInitAll(comms, nDev, devs));
-
+    printf("NCCL comm init all, ndev: %d, devlist: { ", nDev);
+    for (int i = 0; i < nDev; ++i) {
+        printf("%d", vdevs[i]);
+        if (i < nDev-1)
+            printf(", ");
+    }
+    printf(" }\n");
+    NCCLCHECK(ncclCommInitAll(comms, nDev, vdevs));
+    // for (int i = 0; i < nDev; ++i) {
+    //     printf("Init comms on vGPU: %d - pGPU: %d, rank: %d\n",
+    //         i, vgpu_to_pgpu(i, num_pgpu), i);
+    //     NCCLCHECK(ncclCommInitRank(comms+i, nDev, ncclId, i));
+    // }
 
      //calling NCCL communication API. Group API is required when using
      //multiple devices per thread
     NCCLCHECK(ncclGroupStart());
-    for (int i = 0; i < nDev; ++i)
-        NCCLCHECK(ncclAllReduce((const void*)sendbuff[i], (void*)recvbuff[i], size, ncclFloat, ncclSum,
+    for (int i = 0; i < nDev; ++i) {
+        printf("NCCL all reduce on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        NCCLCHECK(ncclAllReduce((const void*)sendbuff[i], (void*)recvbuff[i], size, ncclInt, ncclSum,
             comms[i], s[i]));
+    }
     NCCLCHECK(ncclGroupEnd());
-
 
     //synchronizing on CUDA streams to wait for completion of NCCL operation
     for (int i = 0; i < nDev; ++i) {
-        CUDACHECK(cudaSetDevice(i));
+        printf("Synchronize streams on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
         CUDACHECK(cudaStreamSynchronize(s[i]));
     }
 
+    // Check memory contents
+    for (int i = 0; i < nDev; ++i) {
+        printf("Buffer content on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
+        CUDACHECK(cudaMemcpy(hostbuff, sendbuff[i], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("    send: 0x%x\n", hostbuff[0]);
+        CUDACHECK(cudaMemcpy(hostbuff, recvbuff[i], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("    recv: 0x%x\n", hostbuff[1]);
+    }
 
     //free device buffers
     for (int i = 0; i < nDev; ++i) {
-        CUDACHECK(cudaSetDevice(i));
+        printf("Free memories on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
         CUDACHECK(cudaFree(sendbuff[i]));
         CUDACHECK(cudaFree(recvbuff[i]));
     }
 
-
     //finalizing NCCL
-    for(int i = 0; i < nDev; ++i)
+    for(int i = 0; i < nDev; ++i) {
+        printf("NCCL comm destroy on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
         ncclCommDestroy(comms[i]);
-
+    }
 
     printf("Success \n");
+
+    free(devs);
+    free(vdevs);
+    free(sendbuff);
+    free(recvbuff);
+    free(hostbuff);
     return 0;
 }
 
