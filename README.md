@@ -34,6 +34,11 @@ Run with MPI on 40 processes (potentially on multiple nodes) with 4 GPUs each, d
 $ mpirun -np 40 ./build/all_reduce_perf -b 8 -e 128M -f 2 -g 4 -c 0
 ```
 
+Run vgpu proof-of-concept with 2 physical GPUs and 16 virtual GPUS :
+```shell
+$ ./build/vgpu_poc -n 2 -m 16
+```
+
 ### Performance
 
 See the [Performance](doc/PERFORMANCE.md) page for explanation about numbers, and in particular the "busbw" column.
@@ -64,7 +69,9 @@ All tests support the same set of arguments :
   * `-c,--check <0/1>` check correctness of results. This can be quite slow on large numbers of GPUs. Default : 1.
   * `-z,--blocking <0/1>` Make NCCL collective blocking, i.e. have CPUs wait and sync after each collective. Default : 0.
 
-## Copyright
+### PoC
 
-NCCL tests are provided under the BSD license. All source code and accompanying documentation is copyright (c) 2016-2019, NVIDIA CORPORATION. All rights reserved.
-
+* vgpu
+  * `-n <pgpu num>` number of physical gpus. Default : 1.
+  * `-m <vgpu num>` number of virtual gpus. Default : 2.
+  * NOTE: set NCCL_LAUNCH_MODE=PARALLEL if encountering CUDA issues.
