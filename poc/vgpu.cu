@@ -45,7 +45,9 @@ int vgpu_test(const int num_pgpu, const int num_vgpu)
     //NCCLCHECK(ncclGetUniqueId(&ncclId));
 
     ncclComm_t *comms = (ncclComm_t *)malloc(sizeof(ncclComm_t)*num_vgpu);
-
+    for (int i=0; i<num_vgpu; ++i) {
+        printf("comm #%d host address: %p\n", i, &comms[i]);
+    }
     int nDev = num_vgpu;
     int size = 32*1024*1024;
     int *devs = (int *)malloc(sizeof(int)*num_vgpu);
