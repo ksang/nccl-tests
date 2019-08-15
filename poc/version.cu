@@ -26,5 +26,14 @@ int main(int argc, char* argv[])
     int version = 0;
     NCCLCHECK(ncclGetVersion(&version));
     printf("NCCL version: %d\n", version);
+
+    ncclUniqueId ncclId;
+    NCCLCHECK(ncclGetUniqueId(&ncclId));
+    printf("NCCL UniqueId: \n");
+    for ( int i=0; i < 128; ++i) {
+        if (i > 0) printf(":");
+        printf("%02X", ncclId.internal[i]);
+    }
+    printf("\n");
     return 0;
 }
