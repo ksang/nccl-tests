@@ -45,7 +45,9 @@ int vgpu_test(const int num_pgpu, const int num_vgpu)
     NCCLCHECK(ncclGetUniqueId(&ncclId));
 
     ncclComm_t *comms = (ncclComm_t *)malloc(sizeof(ncclComm_t)*num_vgpu);
-
+    for (int i=0; i<num_vgpu; ++i) {
+        printf("comm #%d host address: %p\n", i, comms[i]);
+    }
     int nDev = num_vgpu;
     int size = 32*1024*1024;
     int *devs = (int *)malloc(sizeof(int)*num_vgpu);
@@ -88,23 +90,38 @@ int vgpu_test(const int num_pgpu, const int num_vgpu)
     }
 
     //initializing NCCL
-    // printf("NCCL comm init all, ndev: %d, devlist: { ", nDev);
-    // for (int i = 0; i < nDev; ++i) {
-    //     printf("%d", vdevs[i]);
-    //     if (i < nDev-1)
-    //         printf(", ");
-    // }
-    // printf(" }\n");
-    // NCCLCHECK(ncclCommInitAll(comms, nDev, vdevs));
+    //printf("NCCL comm init all, ndev: %d, devlist: { ", nDev);
+    //for (int i = 0; i < nDev; ++i) {
+    //    printf("%d", vdevs[i]);
+    //    if (i < nDev-1)
+    //        printf(", ");
+    //}
+    //printf(" }\n");
+    //NCCLCHECK(ncclCommInitAll(comms, nDev, vdevs));
     NCCLCHECK(ncclGroupStart());
     for (int i = 0; i < nDev; ++i) {
         printf("Init comms on vGPU: %d - pGPU: %d, rank: %d\n",
             i, vgpu_to_pgpu(i, num_pgpu), i);
         CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
         NCCLCHECK(ncclCommInitRank(comms+i, nDev, ncclId, i));
+        printf("ncclCommInitRank comm: %p\n", comms[i]);
     }
     NCCLCHECK(ncclGroupEnd());
 
+    //printing comm information
+    for (int i = 0; i < nDev; ++i) {
+	int dev;
+        int rank;
+        int count;
+        ncclResult_t asyncError;
+        NCCLCHECK(ncclCommCuDevice(comms[i], &dev));
+        NCCLCHECK(ncclCommCount(comms[i], &count));
+        NCCLCHECK(ncclCommUserRank(comms[i], &rank));
+        NCCLCHECK(ncclCommGetAsyncError(comms[i], &asyncError));
+        printf("Comm #%d : device: %d count: %d rank: %d async_err: %d\n", 
+            i, dev, count, rank, asyncError);
+    }
+    // ncclAllReduce
     //calling NCCL communication API. Group API is required when using
     //multiple devices per thread
     NCCLCHECK(ncclGroupStart());
@@ -112,6 +129,37 @@ int vgpu_test(const int num_pgpu, const int num_vgpu)
         printf("NCCL all reduce on vGPU: %d - pGPU: %d\n",
             i, vgpu_to_pgpu(i, num_pgpu));
         NCCLCHECK(ncclAllReduce((const void*)sendbuff[i], (void*)recvbuff[i], size, ncclInt, ncclSum,
+            comms[i], s[i]));
+    }
+    NCCLCHECK(ncclGroupEnd());
+
+    //synchronizing on CUDA streams to wait for completion of NCCL operation
+    for (int i = 0; i < nDev; ++i) {
+        printf("Synchronize streams on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
+        CUDACHECK(cudaStreamSynchronize(s[i]));
+    }
+
+    // Check memory contents
+    for (int i = 0; i < nDev; ++i) {
+        printf("Buffer content on vGPU: %d - pGPU: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu));
+        CUDACHECK(cudaSetDevice(vgpu_to_pgpu(i, num_pgpu)));
+        CUDACHECK(cudaMemcpy(hostbuff, sendbuff[i], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("    send: 0x%x\n", hostbuff[0]);
+        CUDACHECK(cudaMemcpy(hostbuff, recvbuff[i], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("    recv: 0x%x\n", hostbuff[1]);
+    }
+    //ncclBroadcast
+    //calling NCCL communication API. Group API is required when using
+    //multiple devices per thread
+    int root = 0;
+    NCCLCHECK(ncclGroupStart());
+    for (int i = 0; i < nDev; ++i) {
+        printf("NCCL boardcast on vGPU: %d - pGPU: %d, root: %d\n",
+            i, vgpu_to_pgpu(i, num_pgpu), root);
+        NCCLCHECK(ncclBroadcast((const void*)sendbuff[i], (void*)recvbuff[i], size, ncclInt, root,
             comms[i], s[i]));
     }
     NCCLCHECK(ncclGroupEnd());

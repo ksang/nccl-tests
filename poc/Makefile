@@ -61,6 +61,8 @@ DST_DIR := $(BUILDDIR)
 SRC_FILES := $(wildcard *.cu)
 OBJ_FILES := $(SRC_FILES:%.cu=${DST_DIR}/%.o)
 BIN_FILES_LIST := vgpu
+BIN_FILES_LIST += version
+BIN_FILES_LIST += mpinit
 BIN_FILES_LIST += sync
 BIN_FILES := $(BIN_FILES_LIST:%=${DST_DIR}/%_poc)
 
