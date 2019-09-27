@@ -32,11 +32,13 @@ static void usage(const char *argv0)
 	printf("Usage: %s       sync nccl proof of concept.\n", argv0);
 	printf("                create threads per gpu and exec nccl calls synchronously.\n");
 	printf("Options:\n");
-	printf("  -n        number of GPUs and threads(default 2)\n");
-	printf("  %s -n 4\n", argv0);
+    printf("  -n        number of GPUs and threads (default 2)\n");
+	printf("  -i        number of iterations (default 1)\n");
+	printf("  %s -n 4 -i 100\n", argv0);
 }
 
 int NRANKS;
+int ITER_NUM;
 
 void *worker(void *arg)
 {
@@ -80,60 +82,62 @@ void *worker(void *arg)
     CUDACHECK(cudaSetDevice(rank));
     NCCLCHECK(ncclCommInitRank(&comm, nranks, ncclId, rank));
 
-    printf("%ld: NCCL all reduce on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    NCCLCHECK(ncclAllReduce((const void*)sendbuff[0], (void*)recvbuff[0], size, ncclInt, ncclSum,
-        comm, stream));
+    for (int i=0; i<ITER_NUM; ++i) {
 
-    //synchronizing on CUDA streams to wait for completion of NCCL operation
-    printf("%ld: Synchronize streams on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    CUDACHECK(cudaStreamSynchronize(stream));
+        printf("%ld: NCCL all reduce on GPU: %d, iter: %d\n", tid, rank, i+1);
+        CUDACHECK(cudaSetDevice(rank));
+        NCCLCHECK(ncclAllReduce((const void*)sendbuff[0], (void*)recvbuff[0], size, ncclInt, ncclSum,
+            comm, stream));
 
-    // Check memory contents
-    printf("%ld: Buffer content on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    CUDACHECK(cudaMemcpy(hostbuff, sendbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
-    printf("%ld:    send: 0x%x\n", tid, hostbuff[0]);
-    CUDACHECK(cudaMemcpy(hostbuff, recvbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
-    printf("%ld:    recv: 0x%x\n", tid, hostbuff[0]);
+        //synchronizing on CUDA streams to wait for completion of NCCL operation
+        printf("%ld: Synchronize streams on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        CUDACHECK(cudaStreamSynchronize(stream));
 
-    printf("%ld: NCCL reduce on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    NCCLCHECK(ncclReduce((const void*)sendbuff[0], (void*)recvbuff[0], size, ncclInt, ncclSum,
-        0, comm, stream));
+        // Check memory contents
+        printf("%ld: Buffer content on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        CUDACHECK(cudaMemcpy(hostbuff, sendbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("%ld:    send: 0x%x\n", tid, hostbuff[0]);
+        CUDACHECK(cudaMemcpy(hostbuff, recvbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("%ld:    recv: 0x%x\n", tid, hostbuff[0]);
 
-    //synchronizing on CUDA streams to wait for completion of NCCL operation
-    printf("%ld: Synchronize streams on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    CUDACHECK(cudaStreamSynchronize(stream));
+        printf("%ld: NCCL reduce on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        NCCLCHECK(ncclReduce((const void*)sendbuff[0], (void*)recvbuff[0], size, ncclInt, ncclSum,
+            0, comm, stream));
 
-    // Check memory contents
-    printf("%ld: Buffer content on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    CUDACHECK(cudaMemcpy(hostbuff, sendbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
-    printf("%ld:    send: 0x%x\n", tid, hostbuff[0]);
-    CUDACHECK(cudaMemcpy(hostbuff, recvbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
-    printf("%ld:    recv: 0x%x\n", tid, hostbuff[0]);
+        //synchronizing on CUDA streams to wait for completion of NCCL operation
+        printf("%ld: Synchronize streams on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        CUDACHECK(cudaStreamSynchronize(stream));
 
-    printf("%ld: NCCL BroadCase on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    NCCLCHECK(ncclBroadcast((const void*)sendbuff[0], (void*)recvbuff[0], size, ncclInt, 0,
-        comm, stream));
+        // Check memory contents
+        printf("%ld: Buffer content on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        CUDACHECK(cudaMemcpy(hostbuff, sendbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("%ld:    send: 0x%x\n", tid, hostbuff[0]);
+        CUDACHECK(cudaMemcpy(hostbuff, recvbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("%ld:    recv: 0x%x\n", tid, hostbuff[0]);
 
-    //synchronizing on CUDA streams to wait for completion of NCCL operation
-    printf("%ld: Synchronize streams on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    CUDACHECK(cudaStreamSynchronize(stream));
+        printf("%ld: NCCL BroadCase on GPU: %d, iter: %d\n", tid, rank, i+1);
+        CUDACHECK(cudaSetDevice(rank));
+        NCCLCHECK(ncclBroadcast((const void*)sendbuff[0], (void*)recvbuff[0], size, ncclInt, 0,
+            comm, stream));
 
-    // Check memory contents
-    printf("%ld: Buffer content on GPU: %d\n", tid, rank);
-    CUDACHECK(cudaSetDevice(rank));
-    CUDACHECK(cudaMemcpy(hostbuff, sendbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
-    printf("%ld:    send: 0x%x\n", tid, hostbuff[0]);
-    CUDACHECK(cudaMemcpy(hostbuff, recvbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
-    printf("%ld:    recv: 0x%x\n", tid, hostbuff[0]);
+        //synchronizing on CUDA streams to wait for completion of NCCL operation
+        printf("%ld: Synchronize streams on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        CUDACHECK(cudaStreamSynchronize(stream));
 
+        // Check memory contents
+        printf("%ld: Buffer content on GPU: %d\n", tid, rank);
+        CUDACHECK(cudaSetDevice(rank));
+        CUDACHECK(cudaMemcpy(hostbuff, sendbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("%ld:    send: 0x%x\n", tid, hostbuff[0]);
+        CUDACHECK(cudaMemcpy(hostbuff, recvbuff[0], size * sizeof(int), cudaMemcpyDeviceToHost));
+        printf("%ld:    recv: 0x%x\n", tid, hostbuff[0]);
+    }
 
     //free device buffers
     printf("%ld: Free memories on GPU: %d\n", tid, rank);
@@ -169,9 +173,10 @@ int sync_test(const int num_gpu)
 int main(int argc, char* argv[])
 {
     int num_gpu = 2;
+    ITER_NUM = 1;
     while (1) {
 		int c;
-		c = getopt(argc, argv, "n:");
+		c = getopt(argc, argv, "n:i:");
 		if (c == -1)
 			break;
 
@@ -179,6 +184,13 @@ int main(int argc, char* argv[])
 		case 'n':
 			num_gpu = strtol(optarg, NULL, 0);
             if(num_gpu < 0) {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
+        case 'i':
+            ITER_NUM = strtol(optarg, NULL, 0);
+            if(ITER_NUM < 0) {
                 usage(argv[0]);
                 return 1;
             }
